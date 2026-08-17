@@ -18,25 +18,27 @@ export interface ClassificationResult {
 }
 
 // Local fast rule-based classifier (instant offline / fallback engine)
-export const classifyUserMessageLocal = (text: string, currentLang: string = 'mr'): ClassificationResult => {
+export const classifyUserMessageLocal = (text: string, currentLang: string = 'hi'): ClassificationResult => {
   const lower = text.toLowerCase().trim();
 
-  // Detect language accurately
-  let detectedLang: Language = currentLang === 'mr' ? 'mr' : currentLang === 'hi' ? 'hi' : 'en';
+  // Detect language accurately (Default: Hindi)
+  let detectedLang: Language = 'hi';
 
   if (/[\u0900-\u097F]/.test(text)) {
     // Check Devanagari vocabulary for Marathi vs Hindi
-    if (/आहे|नाही|माझ्या|घराजवळ|रस्त्यावर|तुंबली|कचरा|खड्डा|झाला|करा|दाखला|दिवे|पाणी|नाली/.test(text)) {
+    if (/आहे|नाही|माझ्या|घराजवळ|रस्त्यावर|तुंबली|कचरा|खड्डा|झाला|करा|दाखला|दिवे|पाणी|नाली|प्रभाग|महापालिका|कधी|कसे|सांगा/.test(text)) {
       detectedLang = 'mr';
     } else {
       detectedLang = 'hi';
     }
-  } else if (/mein|nahi|hai|kahan|karo|bhi|raha|gaya|paani|sadak|khadda|kachra|mera|meri|band|ho|gayi/.test(lower)) {
+  } else if (/mein|nahi|hai|kahan|karo|bhi|raha|gaya|paani|sadak|khadda|kachra|mera|meri|band|ho|gayi|kripya|namaste/.test(lower)) {
     detectedLang = 'hi';
-  } else if (/ahe|nahi|mazya|gharjaval|rastya|pani|diwa|kiti|kuthe/.test(lower)) {
+  } else if (/ahe|nahi|mazya|gharjaval|rastya|pani|diwa|kiti|kuthe|takraar/.test(lower)) {
     detectedLang = 'mr';
-  } else if (currentLang === 'mr' || currentLang === 'hi') {
-    detectedLang = currentLang;
+  } else if (/^[a-zA-Z0-9\s.,!?'"()-]+$/.test(text) && !/kachra|sadak|paani|khadda|diwa|pani|ahe|hai|nahi/.test(lower)) {
+    detectedLang = 'en';
+  } else if (currentLang === 'mr' || currentLang === 'hi' || currentLang === 'en') {
+    detectedLang = currentLang as Language;
   }
 
   // Check for Case Tracking intent
@@ -313,7 +315,7 @@ export const classifyUserMessageLocal = (text: string, currentLang: string = 'mr
 export const classifyUserMessage = async (
   text: string,
   history: Array<{ sender: string; text: string }> = [],
-  currentLang: string = 'en'
+  currentLang: string = 'hi'
 ): Promise<ClassificationResult> => {
   try {
     const res = await fetch('/api/ai/classify', {

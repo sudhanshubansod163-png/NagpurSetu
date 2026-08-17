@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { PROBLEM_DOMAINS, ProblemDomain } from '../data/problemDomains';
 import { StorageService } from '../services/storage';
+import { SpeechService } from '../services/speech';
 import { CaseItem } from '../types';
 
 interface SpecializedProblemAIModalProps {
@@ -64,7 +65,7 @@ export const SpecializedProblemAIModal: React.FC<SpecializedProblemAIModalProps>
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [preferredLang, setPreferredLang] = useState<'mr' | 'hi' | 'en'>('mr');
+  const [preferredLang, setPreferredLang] = useState<'mr' | 'hi' | 'en'>('hi');
   const [locationName, setLocationName] = useState(initialLocation);
   const [wardName, setWardName] = useState(initialWard);
   const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
@@ -186,26 +187,23 @@ export const SpecializedProblemAIModal: React.FC<SpecializedProblemAIModalProps>
     }
   };
 
-  // Text to Speech
+  // Text to Speech with SpeechService multilingual voice support
   const speakText = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-
     if (isSpeaking) {
+      SpeechService.stopSpeaking();
       setIsSpeaking(false);
       return;
     }
 
-    const clean = text.replace(/[*#_~]/g, '').trim();
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = preferredLang === 'mr' ? 'mr-IN' : preferredLang === 'hi' ? 'hi-IN' : 'en-IN';
-    utterance.rate = 1.0;
+    SpeechService.stopSpeaking();
+    setIsSpeaking(true);
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    window.speechSynthesis.speak(utterance);
+    SpeechService.speak(
+      text,
+      preferredLang,
+      () => setIsSpeaking(true),
+      () => setIsSpeaking(false)
+    );
   };
 
   // Send message to real-time Problem AI API

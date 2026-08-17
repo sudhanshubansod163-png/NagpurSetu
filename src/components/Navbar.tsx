@@ -36,11 +36,37 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
+  const logoClicksRef = React.useRef(0);
+  const clickTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleLogoClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    logoClicksRef.current += 1;
+
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+    }
+
+    if (logoClicksRef.current >= 5) {
+      logoClicksRef.current = 0;
+      navigate('/admin');
+      return;
+    }
+
+    clickTimeoutRef.current = setTimeout(() => {
+      logoClicksRef.current = 0;
+    }, 2500);
+
+    if (currentRoute !== '/') {
+      navigate('/');
+    }
+  };
+
   const navLinks = [
     { label: 'Home', route: '/' },
-    { label: 'Solutions', route: '/services' },
+    { label: 'Solutions', route: '/services', isHighlighted: true },
     { label: 'Schemes', route: '/schemes' },
-    { label: 'Certificates', route: '/certificates' },
+    { label: 'Certificates', route: '/certificates', isHighlighted: true },
     { label: 'Complaints', route: '/complaints' },
     { label: 'Hotspot Map', route: '/hotspots' },
     { label: 'My Cases', route: '/cases' },
@@ -55,9 +81,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Logo */}
           <div className="flex items-center gap-8">
             <button
-              onClick={() => navigate('/')}
-              className="flex items-center gap-2.5 text-left focus:outline-hidden group cursor-pointer"
+              onClick={handleLogoClick}
+              className="flex items-center gap-2.5 text-left focus:outline-hidden group cursor-pointer select-none"
               id="nav-logo"
+              title="NagpurSetu"
             >
               <div className="flex flex-col">
                 <span className="text-2xl font-extrabold tracking-tight text-[#0B1E38] group-hover:text-blue-900 transition-colors">
@@ -76,6 +103,26 @@ export const Navbar: React.FC<NavbarProps> = ({
                   currentRoute === link.route ||
                   (link.route === '/cases' && currentRoute.startsWith('/cases')) ||
                   (link.route === '/talk' && currentRoute.startsWith('/talk'));
+
+                if (link.isHighlighted) {
+                  return (
+                    <button
+                      key={link.route}
+                      onClick={() => navigate(link.route)}
+                      className={`relative px-3.5 py-1.5 text-sm font-bold rounded-lg transition-all cursor-pointer border ${
+                        isActive
+                          ? 'bg-blue-700 text-white border-blue-800 shadow-md ring-2 ring-blue-400/30'
+                          : 'bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-900 border-blue-200 shadow-2xs'
+                      }`}
+                      id={`nav-link-${link.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        {link.label}
+                      </span>
+                    </button>
+                  );
+                }
 
                 return (
                   <button
@@ -195,9 +242,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 navigate(link.route);
                 setMobileMenuOpen(false);
               }}
-              className="w-full text-left px-3 py-2.5 rounded-md text-sm font-medium text-slate-800 hover:bg-slate-100 flex items-center justify-between cursor-pointer"
+              className={`w-full text-left px-3 py-2.5 rounded-md text-sm font-medium flex items-center justify-between cursor-pointer ${
+                link.isHighlighted
+                  ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200'
+                  : 'text-slate-800 hover:bg-slate-100'
+              }`}
             >
-              <span>{link.label}</span>
+              <span className="flex items-center gap-2">
+                {link.isHighlighted && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                {link.label}
+              </span>
               {link.badge && link.badge > 0 ? (
                 <span className="px-2 py-0.5 text-xs font-bold text-white bg-red-600 rounded-full">
                   {link.badge}

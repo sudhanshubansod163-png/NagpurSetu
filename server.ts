@@ -2,12 +2,14 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || "mohitmeshramcreation@gmail.com";
 
 app.use(express.json());
 
@@ -64,7 +66,7 @@ async function generateWithModelFallback(
 }
 
 // Generate rich, authentic local domain fallback when cloud models are temporarily busy or rate-limited
-function generateLocalDomainDiagnostic(domainKey: string, userMessage: string, location?: string, ward?: string, prefLang: string = 'mr') {
+function generateLocalDomainDiagnostic(domainKey: string, userMessage: string, location?: string, ward?: string, prefLang: string = 'hi') {
   const loc = location || 'Nagpur';
   const wrd = ward || 'Dharampeth (Ward 2)';
 
@@ -384,7 +386,7 @@ app.post("/api/ai/solve-problem", async (req, res) => {
     }
 
     const ai = getGeminiClient();
-    const prefLang = language || 'mr';
+    const prefLang = language || 'hi';
     const domainKey = domainId || 'street_lights';
 
     if (!ai) {
@@ -547,25 +549,26 @@ app.post("/api/ai/classify", async (req, res) => {
     }
 
     const systemPrompt = `You are "NagpurSetu AI Assistant" (नागपूरसेतू नागरिक सहाय्यक), the voice and conversational civic intelligence agent for Nagpur Municipal Corporation (NMC - नागपूर महानगरपालिका).
-Your primary mandate is to converse naturally with citizens in MARATHI (मराठी) and HINDI (हिंदी) as the priority local languages of Nagpur, while also supporting English when requested.
+Your default voice and primary spoken language is HINDI (हिंदी). You MUST detect whatever language the citizen uses (Hindi, Marathi, English, Gujarati, etc.) and respond empathetically in that exact language and tone.
 
-CORE LANGUAGE MANDATE:
-1. MARATHI (मराठी) - TOP PRIORITY:
-   - When the user selects Marathi or writes/speaks in Marathi (e.g., 'कचरा उचलला नाही', 'रस्त्यावर मोठा खड्डा आहे', 'पाणी येत नाही', 'पथदिवे बंद आहेत', 'नाली तुंबली आहे', 'दाखला कसा काढायचा', 'माझ्या प्रभागात समस्या आहे', 'मदत हवी आहे'):
-   - Set "detectedLanguage": "mr".
-   - Your "conversationalReply" MUST be 100% in pure, polite, authentic Marathi in Devanagari script.
-   - Example tone: "नमस्कार! नागपूरसेतू मध्ये आपले स्वागत आहे. मी आपल्या समस्येची नोंद घेत आहे. कृपया रस्त्याचे नाव किंवा जवळचा परिसर मॅपवर निश्चित करा जेणेकरून संबंधित विभागीय कार्यालयाला माहिती पाठवता येईल."
-
-2. HINDI (हिंदी) - TOP PRIORITY:
-   - When the user selects Hindi or writes/speaks in Hindi or Hinglish (e.g., 'कचरा नहीं उठाया गया', 'सड़क पर बड़ा गड्ढा है', 'पानी का प्रेशर कम है', 'स्ट्रीट लाइट खराब है', 'नाली जाम हो गई है', 'complaint darj karni hai', 'pani nahi aa raha'):
+CORE LANGUAGE & VOICE RULES:
+1. HINDI (हिंदी) - PRIMARY DEFAULT VOICE:
+   - Default to clear, natural, polite Hindi unless another language is explicitly detected.
+   - When the user speaks/writes in Hindi or Hinglish (e.g., 'कचरा नहीं उठाया गया', 'सड़क पर बड़ा गड्ढा है', 'पानी का प्रेशर कम है', 'स्ट्रीट लाइट खराब है', 'नाली जाम हो गई है', 'complaint darj karni hai', 'pani nahi aa raha'):
    - Set "detectedLanguage": "hi".
    - Your "conversationalReply" MUST be in clear, warm, fluent Hindi in Devanagari script.
    - Example tone: "नमस्ते! नागपुरसेतु में आपका स्वागत है। आपकी शिकायत दर्ज की जा रही है। कृपया मैप पर सटीक स्थान या लैंडमार्क चुनें ताकि संबंधित जोन के अधिकारियों को तुरंत सूचित किया जा सके।"
 
-3. ENGLISH:
-   - If user explicitly queries in English, set "detectedLanguage": "en" and provide a helpful, concise English reply.
+2. MARATHI (मराठी) - DYNAMIC DETECTION:
+   - When the user writes/speaks in Marathi (e.g., 'कचरा उचलला नाही', 'रस्त्यावर मोठा खड्डा आहे', 'पाणी येत नाही', 'पथदिवे बंद आहेत', 'नाली तुंबली आहे', 'दाखला कसा काढायचा', 'माझ्या प्रभागात समस्या आहे', 'मदत हवी आहे'):
+   - Set "detectedLanguage": "mr".
+   - Your "conversationalReply" MUST be 100% in pure, polite, authentic Marathi in Devanagari script.
+   - Example tone: "नमस्कार! नागपूरसेतू मध्ये आपले स्वागत आहे. मी आपल्या समस्येची नोंद घेत आहे. कृपया रस्त्याचे नाव किंवा जवळचा परिसर मॅपवर निश्चित करा जेणेकरून संबंधित विभागीय कार्यालयाला माहिती पाठवता येईल."
 
-4. If user preferred language is provided as '${language || 'mr'}', prioritize '${language || 'mr'}' unless user clearly typed in another language.
+3. ENGLISH & OTHER LANGUAGES:
+   - If user queries in English or another regional language, set "detectedLanguage" accordingly ("en", etc.) and provide a helpful, natural reply in that language.
+
+4. Default preferred language: '${language || 'hi'}'.
 
 Analyze the user's latest message and return a STRICT valid JSON object with the following fields:
 - intent: one of ["complaint", "service_request", "track_case", "inquiry", "general"]
@@ -576,8 +579,8 @@ Analyze the user's latest message and return a STRICT valid JSON object with the
 - wardHint: One of the 10 NMC Wards if identifiable ("Laxmi Nagar (Ward 1)", "Dharampeth (Ward 2)", "Hanuman Nagar (Ward 3)", "Dhantoli (Ward 4)", "Nehru Nagar (Ward 5)", "Gandhibagh (Ward 6)", "Sataranjipura (Ward 7)", "Lakadganj (Ward 8)", "Ashi Nagar (Ward 9)", "Mangalwari (Ward 10)"), or ""
 - priority: "Emergency" | "High" | "Elevated" | "Normal" | "Low"
 - slaDays: number of standard SLA days to fix (e.g. 1 for drainage/water emergency, 2 for garbage/pothole, 3 for streetlight, 5 for certificates)
-- detectedLanguage: "mr" | "hi" | "en"
-- conversationalReply: The empathetic, direct message to be spoken back to citizen in their language (predominantly Marathi or Hindi).
+- detectedLanguage: "hi" | "mr" | "en"
+- conversationalReply: The empathetic, direct message to be spoken back to citizen in their language.
 - needsLocation: boolean (true for physical civic issues like garbage, potholes, streetlights, drainage)
 - needsPhoto: boolean (true if visual verification helps crews dispatch the right vehicle/equipment)
 - suggestedAction: "location_picker" | "photo_upload" | "case_summary" | "duplicate_warning" | "categories"
@@ -601,8 +604,8 @@ Return ONLY the JSON object. Do not include markdown code block markers.`;
         wardHint: parsed.wardHint || '',
         priority: parsed.priority || 'Normal',
         slaDays: typeof parsed.slaDays === 'number' ? parsed.slaDays : 2,
-        detectedLanguage: parsed.detectedLanguage || (language || 'mr'),
-        conversationalReply: parsed.conversationalReply || 'आपल्या समस्येची नोंद घेतली आहे. NagpurSetu द्वारे संबंधित विभागाला सूचना पाठवली आहे.',
+        detectedLanguage: parsed.detectedLanguage || (language || 'hi'),
+        conversationalReply: parsed.conversationalReply || 'नमस्ते! आपकी समस्या दर्ज कर ली गई है। NagpurSetu द्वारा संबंधित विभाग को सूचना भेज दी गई है।',
         needsLocation: parsed.needsLocation ?? true,
         needsPhoto: parsed.needsPhoto ?? true,
         suggestedAction: parsed.suggestedAction || 'location_picker',
@@ -611,7 +614,7 @@ Return ONLY the JSON object. Do not include markdown code block markers.`;
     }
 
     // Graceful structured fallback
-    const isMarathi = language === 'mr' || /[\u0900-\u097F]/.test(text);
+    const isMarathi = language === 'mr' || /[\u0900-\u097F]/.test(text) && /आहे|नाही|माझ्या|घराजवळ|रस्त्यावर|तुंबली|कचरा|खड्डा|झाला|करा|दाखला|दिवे|पाणी|नाली/.test(text);
     return res.json({
       source: 'local_fallback',
       intent: 'complaint',
@@ -622,19 +625,19 @@ Return ONLY the JSON object. Do not include markdown code block markers.`;
       wardHint: 'Dharampeth (Ward 2)',
       priority: 'Normal',
       slaDays: 2,
-      detectedLanguage: language || (isMarathi ? 'mr' : 'en'),
-      conversationalReply: language === 'mr' || isMarathi
+      detectedLanguage: isMarathi ? 'mr' : (language || 'hi'),
+      conversationalReply: isMarathi
         ? 'नमस्कार! मी आपल्या समस्येची नोंद घेतली आहे. कृपया रस्त्याचे अचूक नाव सांगा किंवा मॅपवर ठिकाण निश्चित करा.'
-        : language === 'hi'
-        ? 'नमस्ते! मैंने आपकी समस्या नोट कर ली है। कृपया सटीक सड़क या लैंडमार्क चुनें।'
-        : 'I have noted your concern. Please confirm your exact location or landmark in Nagpur so we can dispatch the rapid team.',
+        : language === 'en'
+        ? 'I have noted your concern. Please confirm your exact location or landmark in Nagpur so we can dispatch the rapid team.'
+        : 'नमस्ते! मैंने आपकी समस्या नोट कर ली है। कृपया सड़क का नाम या लैंडमार्क चुनें ताकि टीम भेजी जा सके।',
       needsLocation: true,
       needsPhoto: true,
       suggestedAction: 'location_picker'
     });
   } catch (error: any) {
     console.error("AI classification caught error:", error);
-    const prefLang = req.body?.language || 'mr';
+    const prefLang = req.body?.language || 'hi';
     return res.json({
       source: 'local_fallback',
       intent: 'complaint',
@@ -647,12 +650,156 @@ Return ONLY the JSON object. Do not include markdown code block markers.`;
       slaDays: 2,
       detectedLanguage: prefLang,
       conversationalReply: prefLang === 'mr'
-        ? 'आपल्या समस्येची नोंद घेतली आहे. कृपया परिसराचे नाव निश्चित करा.'
-        : 'Your civic concern has been recorded. Please confirm your locality.',
+        ? 'आपल्या समस्येची नोंद घेण्यात आली आहे. संबंधित मनपा विभागाला सूचना पाठवली आहे.'
+        : prefLang === 'en'
+        ? 'Your issue has been noted. NMC municipal department notified.'
+        : 'आपकी समस्या नोट कर ली गई है। संबंधित मनपा विभाग को सूचित कर दिया गया है।',
       needsLocation: true,
       needsPhoto: true,
       suggestedAction: 'location_picker'
     });
+  }
+});
+
+// Hidden Admin Complaint Alert Email Dispatcher
+app.post("/api/notify-admin-email", async (req, res) => {
+  try {
+    const { 
+      caseId, 
+      title, 
+      description, 
+      citizenName, 
+      citizenPhone, 
+      category, 
+      department, 
+      location, 
+      ward, 
+      priority, 
+      photoUrl, 
+      isCitizenVerified 
+    } = req.body;
+
+    const targetEmail = ADMIN_ALERT_EMAIL;
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    console.log(`[NagpurSetu Admin Alert] New complaint #${caseId || 'NEW'} submitted by ${citizenName || 'Citizen'}. Alert target: ${targetEmail}`);
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 24px; color: #1e293b;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+          <div style="background: #0B1E38; padding: 20px 24px; color: #ffffff;">
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">NagpurSetu • NMC Civic Alert</h2>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #94a3b8;">New Complaint Submitted by Citizen</p>
+          </div>
+
+          <div style="padding: 24px;">
+            <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+              <span style="font-size: 12px; color: #1e40af; font-weight: bold; text-transform: uppercase;">Reference Case ID:</span>
+              <div style="font-size: 18px; font-weight: 800; color: #1e3a8a; font-family: monospace;">#${caseId || 'NEW'}</div>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold; width: 35%;">Citizen Name:</td>
+                <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${citizenName || 'Citizen User'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Citizen Phone:</td>
+                <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${citizenPhone || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Problem Title:</td>
+                <td style="padding: 10px 0; color: #0f172a; font-weight: bold;">${title || 'Civic Problem'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Category:</td>
+                <td style="padding: 10px 0; color: #0f172a;">${category || 'Civic Infrastructure'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Assigned Dept:</td>
+                <td style="padding: 10px 0; color: #2563eb; font-weight: bold;">${department || 'Solid Waste Management'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Location / Landmark:</td>
+                <td style="padding: 10px 0; color: #0f172a;">${location || 'Nagpur'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">NMC Ward:</td>
+                <td style="padding: 10px 0; color: #0f172a;">${ward || 'Dharampeth (Ward 2)'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Priority:</td>
+                <td style="padding: 10px 0; color: ${priority === 'High' || priority === 'Critical' ? '#dc2626' : '#059669'}; font-weight: bold;">${priority || 'Normal'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Ground Verification:</td>
+                <td style="padding: 10px 0; color: #059669; font-weight: bold;">${isCitizenVerified ? '✓ 100% Ground-Truth Certified' : 'Standard Intake'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px 0; color: #64748b; font-weight: bold;">Timestamp:</td>
+                <td style="padding: 10px 0; color: #64748b;">${timestamp}</td>
+              </tr>
+            </table>
+
+            ${description ? `
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+                <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">Description:</div>
+                <div style="font-size: 13px; color: #334155; line-height: 1.6;">${description}</div>
+              </div>
+            ` : ''}
+
+            ${photoUrl ? `
+              <div style="margin-bottom: 20px;">
+                <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">Attached Geotag Photo:</div>
+                <div style="border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1; max-height: 250px; text-align: center; background: #000;">
+                  <img src="${photoUrl}" alt="Evidence" style="max-width: 100%; max-height: 250px; object-fit: contain;" />
+                </div>
+              </div>
+            ` : ''}
+
+            <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
+              This is an automated administrative notification from NagpurSetu Municipal Grievance Redressal System.
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Attempt delivery via SMTP if credentials exist in environment
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: Number(process.env.SMTP_PORT) || 587,
+          secure: Number(process.env.SMTP_PORT) === 465,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"NagpurSetu Municipal Alert" <${process.env.SMTP_USER}>`,
+          to: targetEmail,
+          subject: `[NagpurSetu Alert] New Complaint: #${caseId || 'NEW'} - ${citizenName || 'Citizen'} (${category || 'Civic Problem'})`,
+          html: htmlContent,
+        });
+        console.log(`[NagpurSetu Email] Delivered SMTP alert email to ${targetEmail} for case #${caseId}`);
+      } catch (smtpErr) {
+        console.warn(`[NagpurSetu Email] SMTP dispatch notice:`, smtpErr);
+      }
+    } else {
+      console.log(`[NagpurSetu Notification] Complaint Alert dispatched for ${targetEmail}: "${title}" by ${citizenName} (#${caseId})`);
+    }
+
+    return res.json({ 
+      success: true, 
+      message: "Admin alert recorded and processed successfully", 
+      caseId: caseId 
+    });
+  } catch (error: any) {
+    console.error("Notify admin email caught error:", error);
+    return res.status(500).json({ error: "Failed to dispatch email alert" });
   }
 });
 

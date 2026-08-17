@@ -1,4 +1,5 @@
 // Speech recognition and synthesis helper with cross-browser fallback and Indian language prioritization
+// Default AI voice: Hindi (hi-IN) with dynamic auto-detection for Marathi (mr-IN), English (en-IN), and other languages.
 
 export interface SpeechRecognitionResult {
   transcript: string;
@@ -66,8 +67,61 @@ export class SpeechService {
     return window.speechSynthesis.speaking;
   }
 
+  public static detectLanguageFromText(text: string): string {
+    if (!text || text.trim().length === 0) return 'hi-IN';
+
+    const lower = text.toLowerCase();
+
+    // Check Devanagari script
+    if (/[\u0900-\u097F]/.test(text)) {
+      // Distinct Marathi markers
+      if (/आहे|नाही|माझ्या|घराजवळ|रस्त्यावर|तुंबली|कचरा|खड्डा|झाला|करा|दाखला|दिवे|पाणी|नाली|प्रभाग|महापालिका|कधी|कसे|सांगा/.test(text)) {
+        return 'mr-IN';
+      }
+      // Otherwise default Hindi
+      return 'hi-IN';
+    }
+
+    // Hinglish / Roman Hindi markers
+    if (/mein|nahi|hai|kahan|karo|bhi|raha|gaya|paani|sadak|khadda|kachra|mera|meri|band|ho|gayi|kripya|namaste|samasya/.test(lower)) {
+      return 'hi-IN';
+    }
+
+    // Roman Marathi markers
+    if (/ahe|nahi|mazya|gharjaval|rastya|pani|diwa|kiti|kuthe|takraar|samashya|madat/.test(lower)) {
+      return 'mr-IN';
+    }
+
+    // Gujarati markers
+    if (/[\u0A80-\u0AFF]/.test(text)) {
+      return 'gu-IN';
+    }
+
+    // Bengali markers
+    if (/[\u0980-\u09FF]/.test(text)) {
+      return 'bn-IN';
+    }
+
+    // Tamil markers
+    if (/[\u0B80-\u0BFF]/.test(text)) {
+      return 'ta-IN';
+    }
+
+    // Telugu markers
+    if (/[\u0C00-\u0C7F]/.test(text)) {
+      return 'te-IN';
+    }
+
+    // Latin / English text
+    if (/^[A-Za-z0-9\s.,!?'"()-]+$/.test(text)) {
+      return 'en-IN';
+    }
+
+    return 'hi-IN';
+  }
+
   public static startListening(
-    lang: string = 'mr',
+    lang: string = 'hi',
     onResult: (result: SpeechRecognitionResult) => void,
     onError: (error: string) => void,
     onEnd: () => void
@@ -78,7 +132,6 @@ export class SpeechService {
     }
 
     try {
-      // Stop speaking before listening
       SpeechService.stopSpeaking();
 
       const SpeechRecognitionConstructor =
@@ -97,13 +150,14 @@ export class SpeechService {
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
-      // Select BCP-47 language tag
-      if (lang === 'mr' || lang === 'marathi') {
+      // Select BCP-47 language tag (Default: Hindi)
+      const cleanLang = (lang || 'hi').toLowerCase();
+      if (cleanLang === 'mr' || cleanLang === 'marathi') {
         recognition.lang = 'mr-IN';
-      } else if (lang === 'hi' || lang === 'hindi') {
-        recognition.lang = 'hi-IN';
-      } else {
+      } else if (cleanLang === 'en' || cleanLang === 'english') {
         recognition.lang = 'en-IN';
+      } else {
+        recognition.lang = 'hi-IN';
       }
 
       recognition.onstart = () => {
@@ -127,7 +181,7 @@ export class SpeechService {
       recognition.onerror = (event: any) => {
         SpeechService.isListening = false;
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          onError('Microphone permission was denied. Please allow microphone access in your browser or type your issue.');
+          onError('Microphone permission was denied. Please allow microphone access or type your issue.');
         } else if (event.error === 'no-speech') {
           onError('No speech was detected. Please try speaking closer to the microphone.');
         } else if (event.error === 'network') {
@@ -174,8 +228,8 @@ export class SpeechService {
     }
   }
 
-  // Find best native voice matching Marathi, Hindi, Indian English
-  private static findBestVoice(langTag: string): SpeechSynthesisVoice | null {
+  // Find best native voice matching Hindi, Marathi, Indian English, etc.
+  public static findBestVoice(langTag: string): SpeechSynthesisVoice | null {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
 
     const voices = SpeechService.cachedVoices.length > 0
@@ -186,33 +240,11 @@ export class SpeechService {
 
     const lowerTag = langTag.toLowerCase();
 
-    // 1. Exact BCP-47 match
+    // 1. Exact match (e.g. 'hi-IN', 'mr-IN', 'en-IN')
     const exact = voices.find((v) => v.lang.toLowerCase() === lowerTag);
     if (exact) return exact;
 
-    // 2. Marathi specific match
-    if (lowerTag.startsWith('mr')) {
-      const mrVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().startsWith('mr') ||
-          v.name.toLowerCase().includes('marathi') ||
-          v.name.toLowerCase().includes('mr-in')
-      );
-      if (mrVoice) return mrVoice;
-
-      // Fallback to Hindi Indian voice for Marathi (shares Devanagari phonetics)
-      const hiFallback = voices.find(
-        (v) =>
-          v.lang.toLowerCase().startsWith('hi') ||
-          v.name.toLowerCase().includes('hindi') ||
-          v.name.toLowerCase().includes('lekha') ||
-          v.name.toLowerCase().includes('neerja') ||
-          v.name.toLowerCase().includes('madhav')
-      );
-      if (hiFallback) return hiFallback;
-    }
-
-    // 3. Hindi specific match
+    // 2. Hindi match (Primary default voice of AI)
     if (lowerTag.startsWith('hi')) {
       const hiVoice = voices.find(
         (v) =>
@@ -222,9 +254,30 @@ export class SpeechService {
           v.name.toLowerCase().includes('lekha') ||
           v.name.toLowerCase().includes('swara') ||
           v.name.toLowerCase().includes('madhav') ||
-          v.name.toLowerCase().includes('neerja')
+          v.name.toLowerCase().includes('neerja') ||
+          v.name.toLowerCase().includes('hi-in')
       );
       if (hiVoice) return hiVoice;
+    }
+
+    // 3. Marathi specific match
+    if (lowerTag.startsWith('mr')) {
+      const mrVoice = voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('mr') ||
+          v.name.toLowerCase().includes('marathi') ||
+          v.name.toLowerCase().includes('mr-in')
+      );
+      if (mrVoice) return mrVoice;
+
+      // Devanagari fallback: Hindi voice reads Marathi phonetics accurately
+      const hiFallback = voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('hi') ||
+          v.name.toLowerCase().includes('hindi') ||
+          v.name.toLowerCase().includes('lekha')
+      );
+      if (hiFallback) return hiFallback;
     }
 
     // 4. Indian English match
@@ -240,7 +293,7 @@ export class SpeechService {
       if (inVoice) return inVoice;
     }
 
-    // 5. Broad country code match (e.g. any IN voice)
+    // 5. Broad Indian country code match (e.g. any IN voice)
     const inGeneral = voices.find((v) => v.lang.toUpperCase().includes('IN'));
     if (inGeneral) return inGeneral;
 
@@ -253,9 +306,13 @@ export class SpeechService {
     return voices.find((v) => v.default) || voices[0] || null;
   }
 
+  /**
+   * Speaks the provided text in the target language.
+   * Default voice is Hindi ('hi-IN') unless detected otherwise.
+   */
   public static speak(
     text: string,
-    lang: string = 'mr',
+    lang?: string,
     onStart?: () => void,
     onEnd?: () => void
   ): void {
@@ -271,35 +328,38 @@ export class SpeechService {
       }
 
       // Determine proper language tag
-      let targetLang = 'mr-IN';
-      const cleanLang = (lang || '').toLowerCase();
-      if (cleanLang === 'hi' || cleanLang === 'hindi' || cleanLang === 'hinglish') {
-        targetLang = 'hi-IN';
-      } else if (cleanLang === 'en' || cleanLang === 'english') {
-        targetLang = 'en-IN';
-      } else {
-        // Check text content for Devanagari
-        if (/[\u0900-\u097F]/.test(text)) {
-          if (/आहे|नाही|माझ्या|घराजवळ|रस्त्यावर|तुंबली|कचरा|खड्डा|झाला|करा/.test(text)) {
-            targetLang = 'mr-IN';
-          } else {
-            targetLang = 'hi-IN';
-          }
-        } else {
+      let targetLang = 'hi-IN'; // Default voice of AI is Hindi
+
+      if (lang) {
+        const cleanLang = lang.toLowerCase();
+        if (cleanLang === 'hi' || cleanLang === 'hindi' || cleanLang === 'hi-in') {
+          targetLang = 'hi-IN';
+        } else if (cleanLang === 'mr' || cleanLang === 'marathi' || cleanLang === 'mr-in') {
+          targetLang = 'mr-IN';
+        } else if (cleanLang === 'en' || cleanLang === 'english' || cleanLang === 'en-in') {
           targetLang = 'en-IN';
+        } else if (cleanLang.includes('-')) {
+          targetLang = lang;
+        } else {
+          targetLang = `${cleanLang}-IN`;
         }
+      } else {
+        // Auto-detect language directly from text
+        targetLang = SpeechService.detectLanguageFromText(text);
       }
 
-      // Clean text: strip markdown characters, urls, asterisks, bullet points for smoother speech
+      // Clean text: strip markdown characters, urls, emojis, asterisks for natural voice flow
       const cleanedSpeechText = text
         .replace(/[*#_~`>]/g, '')
         .replace(/https?:\/\/\S+/g, '')
-        .replace(/📍|🚨|⚠️|🛠️|✅|💡|🏢|📞/g, '')
+        .replace(/📍|🚨|⚠️|🛠️|✅|💡|🏢|📞|🔥|🌐|🌊|🕳️|🗑️|🚰|🌳/g, '')
         .trim();
+
+      if (!cleanedSpeechText) return;
 
       const utterance = new SpeechSynthesisUtterance(cleanedSpeechText);
       utterance.lang = targetLang;
-      utterance.rate = targetLang.startsWith('mr') || targetLang.startsWith('hi') ? 0.95 : 1.0;
+      utterance.rate = targetLang.startsWith('hi') || targetLang.startsWith('mr') ? 0.95 : 1.0;
       utterance.pitch = 1.0;
 
       // Assign matching voice
@@ -363,4 +423,3 @@ export class SpeechService {
     }
   }
 }
-

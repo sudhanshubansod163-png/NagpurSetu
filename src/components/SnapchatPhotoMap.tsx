@@ -25,10 +25,20 @@ import {
   Trash2,
   Droplets,
   Trees,
-  Compass
+  Compass,
+  AlertTriangle,
+  User,
+  ShieldCheck,
+  Sliders,
+  Activity,
+  Zap,
+  Rotate3d,
+  Box
 } from 'lucide-react';
 import { SNAP_PHOTO_INCIDENTS, SnapPhotoIncident } from '../data/problemDomains';
 import { StorageService, subscribeToStorage } from '../services/storage';
+import { NAGPUR_LOCALITIES } from './NagpurMapViewer';
+import { CaseItem } from '../types';
 
 interface SnapchatPhotoMapProps {
   selectedProblemType?: string; // 'all' | 'streetlight' | 'flood' | 'pothole' | 'garbage' | 'water' | 'trees'
@@ -43,22 +53,27 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
   selectedProblemType = 'all',
   onSelectIncident,
   onLaunchDedicatedAI,
-  heightClass = 'h-[520px]',
+  heightClass = 'h-[620px]',
   allowSpotConfirmation = true,
   onSpotConfirmed,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const heatLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<string>(selectedProblemType);
-  const [mapTileStyle, setMapTileStyle] = useState<'snapDark' | 'satellite' | 'street'>('snapDark');
+  const [mapTileStyle, setMapTileStyle] = useState<'3dDark' | 'satellite' | 'street'>('3dDark');
   const [selectedStory, setSelectedStory] = useState<SnapPhotoIncident | null>(null);
-  const [showHeatPulse, setShowHeatPulse] = useState(true);
+  const [showThermalHeatmap, setShowThermalHeatmap] = useState<boolean>(true);
+  const [heatIntensity, setHeatIntensity] = useState<number>(0.85);
+  const [view3DMode, setView3DMode] = useState<'flat' | 'isometric' | 'perspective'>('isometric');
+  const [tiltAngle, setTiltAngle] = useState<number>(38);
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
   const [userCustomPin, setUserCustomPin] = useState<{ lat: number; lng: number; name: string } | null>(null);
-  const [realCases, setRealCases] = useState<any[]>(() => StorageService.getCases());
+  const [realCases, setRealCases] = useState<CaseItem[]>(() => StorageService.getCases());
 
+  // Real-time synchronization with Firestore and LocalStorage
   useEffect(() => {
     const refresh = () => setRealCases(StorageService.getCases());
     refresh();
@@ -73,40 +88,93 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
     }
   }, [selectedProblemType]);
 
-  // Convert real citizen cases to incidents
-  const liveIncidents: SnapPhotoIncident[] = realCases.map((c) => {
+  // Adjust tilt angle based on 3D mode
+  useEffect(() => {
+    if (view3DMode === 'flat') setTiltAngle(0);
+    else if (view3DMode === 'isometric') setTiltAngle(38);
+    else if (view3DMode === 'perspective') setTiltAngle(52);
+  }, [view3DMode]);
+
+  // Coordinate resolver for any complaint from any device
+  const resolveCoordsForCase = (c: CaseItem, index: number): { lat: number; lng: number } => {
+    if (typeof c.lat === 'number' && !isNaN(c.lat) && c.lat > 20.8 && c.lat < 21.4 &&
+        typeof c.lng === 'number' && !isNaN(c.lng) && c.lng > 78.8 && c.lng < 79.4) {
+      return { lat: c.lat, lng: c.lng };
+    }
+
+    const locStr = ((c.location || '') + ' ' + (c.ward || '')).toLowerCase();
+    const matched = NAGPUR_LOCALITIES.find(nl => 
+      locStr.includes(nl.name.toLowerCase().split(',')[0].toLowerCase()) ||
+      (nl.landmark && locStr.includes(nl.landmark.toLowerCase().split('/')[0].trim())) ||
+      locStr.includes(nl.ward.toLowerCase().split('(')[0].trim())
+    );
+
+    const baseLat = matched ? matched.lat : 21.1458;
+    const baseLng = matched ? matched.lng : 79.0882;
+
+    const seed = (c.id || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + (index * 17);
+    const offsetLat = ((seed % 19) - 9) * 0.0006;
+    const offsetLng = (((seed * 7) % 19) - 9) * 0.0006;
+
+    return { lat: baseLat + offsetLat, lng: baseLng + offsetLng };
+  };
+
+  // Convert real cases into live problem incidents
+  const liveIncidents: SnapPhotoIncident[] = realCases.map((c, idx) => {
     let probType: SnapPhotoIncident['problemType'] = 'pothole';
-    const catLower = (c.category || '').toLowerCase();
-    if (catLower.includes('street') || catLower.includes('light')) probType = 'streetlight';
-    else if (catLower.includes('drain') || catLower.includes('flood') || catLower.includes('waterlog')) probType = 'flood';
-    else if (catLower.includes('waste') || catLower.includes('garbage')) probType = 'garbage';
-    else if (catLower.includes('water')) probType = 'water';
-    else if (catLower.includes('tree')) probType = 'trees';
+    const catLower = (c.category || '').toLowerCase() + ' ' + (c.department || '').toLowerCase() + ' ' + (c.title || '').toLowerCase();
+    
+    if (catLower.includes('street') || catLower.includes('light') || catLower.includes('electric') || catLower.includes('pole')) {
+      probType = 'streetlight';
+    } else if (catLower.includes('drain') || catLower.includes('flood') || catLower.includes('waterlog') || catLower.includes('sewage') || catLower.includes('manhole')) {
+      probType = 'flood';
+    } else if (catLower.includes('waste') || catLower.includes('garbage') || catLower.includes('kachra') || catLower.includes('safai') || catLower.includes('dump')) {
+      probType = 'garbage';
+    } else if (catLower.includes('water') || catLower.includes('pipe') || catLower.includes('leak') || catLower.includes('tanker')) {
+      probType = 'water';
+    } else if (catLower.includes('tree') || catLower.includes('branch') || catLower.includes('garden')) {
+      probType = 'trees';
+    } else {
+      probType = 'pothole';
+    }
+
+    const { lat, lng } = resolveCoordsForCase(c, idx);
+    const photo = (c.attachments && c.attachments.length > 0 && c.attachments[0].url) 
+      ? c.attachments[0].url 
+      : 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80';
 
     return {
-      id: `inc-${c.id}`,
-      title: c.title,
+      id: c.id,
+      title: c.title || `Complaint #${c.id}`,
       problemType: probType,
       domainId: probType === 'streetlight' ? 'street_lights' : probType === 'flood' ? 'flood_drainage' : probType === 'garbage' ? 'garbage_waste' : probType === 'water' ? 'water_supply' : 'potholes_roads',
-      categoryLabel: c.category,
-      locationName: c.location,
-      ward: c.ward,
-      lat: c.lat || 21.1458,
-      lng: c.lng || 79.0882,
-      photoUrl: c.photos?.[0] || 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80',
-      thumbnailUrl: c.photos?.[0] || 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=150&q=80',
-      reportedAgo: c.createdAt || 'Recent',
-      confirmationsCount: c.confirmationsCount || 1,
-      severity: (c.severity?.toLowerCase() === 'critical' || c.severity?.toLowerCase() === 'high' ? 'high' : c.severity?.toLowerCase() === 'low' ? 'low' : 'medium') as 'high' | 'medium' | 'low',
-      aiDiagnosis: c.summary || c.description,
-      assignedUnit: c.assignedDepartment || 'NMC Rapid Squad',
+      categoryLabel: c.category || 'Civic Problem',
+      locationName: c.location || 'Nagpur Central',
+      ward: c.ward || 'Dharampeth (Ward 2)',
+      lat,
+      lng,
+      photoUrl: photo,
+      thumbnailUrl: photo,
+      reportedAgo: c.createdAt ? new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Today',
+      confirmationsCount: c.confirmationsCount || Math.floor(Math.random() * 5) + 3,
+      severity: (c.priority?.toLowerCase() === 'critical' || c.priority?.toLowerCase() === 'high' ? 'high' : c.priority?.toLowerCase() === 'low' ? 'low' : 'medium') as 'high' | 'medium' | 'low',
+      aiDiagnosis: c.description || c.title,
+      assignedUnit: c.assignedOfficer ? `${c.assignedOfficer} (${c.department || 'NMC'})` : (c.department || 'NMC Rapid Squad'),
       status: c.status === 'Resolved' ? 'Resolved' : c.status === 'In Progress' ? 'Squad Dispatched' : 'Investigating',
-      storyAuthor: c.reportedBy?.name ? `Citizen ${c.reportedBy.name}` : 'Citizen Reporter',
-      storyAuthorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80'
+      storyAuthor: c.citizenName ? `Citizen ${c.citizenName}` : 'Nagpur Citizen',
+      storyAuthorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+      potholeDepthInches: probType === 'pothole' ? 3.5 : undefined,
+      waterLevelInches: probType === 'flood' ? 5.0 : undefined,
+      lightStatus: probType === 'streetlight' ? 'Non-Functional Dark Spot' : undefined
     };
   });
 
-  const allIncidents = [...SNAP_PHOTO_INCIDENTS, ...liveIncidents];
+  // Combine real complaints with verified baseline hotspots
+  const existingIds = new Set(liveIncidents.map(i => i.id));
+  const allIncidents = [
+    ...liveIncidents,
+    ...SNAP_PHOTO_INCIDENTS.filter(b => !existingIds.has(b.id))
+  ];
 
   // Filtered incidents: strictly shows ONLY the selected problem or all
   const filteredIncidents = activeFilter === 'all'
@@ -132,7 +200,6 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Default tile layer
     const getTileUrl = (style: string) => {
       if (style === 'satellite') {
         return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -140,20 +207,24 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
       if (style === 'street') {
         return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
       }
-      // Snap Map Dark
       return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
     };
 
-    const tileLayer = L.tileLayer(getTileUrl(mapTileStyle), {
+    L.tileLayer(getTileUrl(mapTileStyle), {
       maxZoom: 19,
       subdomains: 'abcd',
     }).addTo(map);
 
+    // Heat layer group below markers
+    const heatGroup = L.layerGroup().addTo(map);
+    heatLayerGroupRef.current = heatGroup;
+
+    // Markers layer group on top
     const markersGroup = L.layerGroup().addTo(map);
     markersLayerGroupRef.current = markersGroup;
     mapInstanceRef.current = map;
 
-    // Handle user map clicks for spot confirmation
+    // Handle map click for spot selection
     map.on('click', (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
       setUserCustomPin({
@@ -193,55 +264,175 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
       subdomains: 'abcd',
     }).addTo(mapInstanceRef.current);
 
-    // Re-render markers on top
-    renderMarkers();
+    renderLayers();
   }, [mapTileStyle]);
 
-  // Render Snapchat Style Photo Bubble Markers
-  const renderMarkers = () => {
-    if (!mapInstanceRef.current || !markersLayerGroupRef.current) return;
+  // Render 3D Problem Signs & Geospatial Thermal Heatmap
+  const renderLayers = () => {
+    if (!mapInstanceRef.current || !markersLayerGroupRef.current || !heatLayerGroupRef.current) return;
     markersLayerGroupRef.current.clearLayers();
+    heatLayerGroupRef.current.clearLayers();
 
+    // 1. Render Multi-Stop Thermal Heatmap (Like the photo)
+    if (showThermalHeatmap) {
+      filteredIncidents.forEach((inc) => {
+        const weight = Math.min(inc.confirmationsCount, 30);
+        const baseRadius = 180 + (weight * 14);
+
+        // Core color mapping based on problem type
+        let coreColor = '#EF4444'; // Red hot center default
+        let midColor = '#F97316';  // Orange
+        let outerColor = '#FACC15'; // Yellow
+        let edgeColor = '#06B6D4'; // Cyan aura
+
+        if (inc.problemType === 'flood') {
+          coreColor = '#0284C7';
+          midColor = '#06B6D4';
+          outerColor = '#38BDF8';
+          edgeColor = '#7DD3FC';
+        } else if (inc.problemType === 'streetlight') {
+          coreColor = '#F59E0B';
+          midColor = '#FBBF24';
+          outerColor = '#FDE047';
+          edgeColor = '#FEF08A';
+        } else if (inc.problemType === 'pothole') {
+          coreColor = '#EA580C';
+          midColor = '#F97316';
+          outerColor = '#FB923C';
+          edgeColor = '#FDBA74';
+        } else if (inc.problemType === 'garbage') {
+          coreColor = '#059669';
+          midColor = '#10B981';
+          outerColor = '#34D399';
+          edgeColor = '#6EE7B7';
+        }
+
+        // 3 concentric thermal dispersion rings
+        const outerCircle = L.circle([inc.lat, inc.lng], {
+          radius: baseRadius * 1.8,
+          color: edgeColor,
+          fillColor: edgeColor,
+          fillOpacity: 0.12 * heatIntensity,
+          weight: 0,
+          interactive: false
+        });
+
+        const midCircle = L.circle([inc.lat, inc.lng], {
+          radius: baseRadius * 1.1,
+          color: outerColor,
+          fillColor: midColor,
+          fillOpacity: 0.25 * heatIntensity,
+          weight: 0,
+          interactive: false
+        });
+
+        const coreCircle = L.circle([inc.lat, inc.lng], {
+          radius: baseRadius * 0.45,
+          color: coreColor,
+          fillColor: coreColor,
+          fillOpacity: 0.48 * heatIntensity,
+          weight: 1,
+          interactive: false
+        });
+
+        outerCircle.addTo(heatLayerGroupRef.current!);
+        midCircle.addTo(heatLayerGroupRef.current!);
+        coreCircle.addTo(heatLayerGroupRef.current!);
+      });
+    }
+
+    // 2. Render Problem-Wise 3D Illuminated Signs
     filteredIncidents.forEach((inc) => {
-      const ringColor = inc.problemType === 'flood' 
-        ? '#06B6D4' // Cyan
-        : inc.problemType === 'streetlight'
-        ? '#F59E0B' // Amber
-        : inc.problemType === 'pothole'
-        ? '#F97316' // Orange
-        : inc.problemType === 'garbage'
-        ? '#10B981' // Emerald
-        : inc.problemType === 'water'
-        ? '#3B82F6' // Blue
-        : '#84CC16'; // Lime
+      // Configuration per problem sign
+      let signIcon = '🕳️';
+      let signLabel = 'Pothole Crater';
+      let themeColor = '#F97316'; // Orange
+      let badgeMetric = inc.potholeDepthInches ? `${inc.potholeDepthInches}" Depth` : 'Crater Alert';
 
-      const iconHtml = `
-        <div class="snap-map-bubble relative group cursor-pointer" style="transform: translate(-50%, -50%);">
-          ${showHeatPulse ? `
-            <div class="absolute -inset-3 rounded-full animate-ping opacity-40" style="background: ${ringColor};"></div>
-            <div class="absolute -inset-2 rounded-full opacity-60 blur-xs" style="background: ${ringColor};"></div>
-          ` : ''}
+      if (inc.problemType === 'streetlight') {
+        signIcon = '💡';
+        signLabel = 'Outage Dark Spot';
+        themeColor = '#F59E0B'; // Amber
+        badgeMetric = 'Zero Lumens';
+      } else if (inc.problemType === 'flood') {
+        signIcon = '🌊';
+        signLabel = 'Flood Inundation';
+        themeColor = '#06B6D4'; // Cyan
+        badgeMetric = inc.waterLevelInches ? `${inc.waterLevelInches}" Surge` : 'Waterlogged';
+      } else if (inc.problemType === 'garbage') {
+        signIcon = '🗑️';
+        signLabel = 'Solid Waste Dump';
+        themeColor = '#10B981'; // Emerald
+        badgeMetric = inc.wasteTonsEst ? `${inc.wasteTonsEst}T Waste` : 'Overflow';
+      } else if (inc.problemType === 'water') {
+        signIcon = '🚰';
+        signLabel = 'Pipeline Fracture';
+        themeColor = '#3B82F6'; // Blue
+        badgeMetric = 'Hydro Burst';
+      } else if (inc.problemType === 'trees') {
+        signIcon = '🌳';
+        signLabel = 'Tree Obstruction';
+        themeColor = '#84CC16'; // Lime
+        badgeMetric = '11kV Hazard';
+      }
+
+      const isLiveCase = inc.id.startsWith('NS-') || inc.id.startsWith('case-') || inc.id.includes('202');
+
+      const markerHtml = `
+        <div class="municipal-3d-sign-wrapper relative group cursor-pointer transition-transform duration-300 hover:scale-115" style="transform: translate(-50%, -100%);">
           
-          <div class="relative w-12 h-12 rounded-full overflow-hidden shadow-2xl border-3 transition-transform duration-200 group-hover:scale-115" style="border-color: ${ringColor}; background-color: #0F172A;">
-            <img src="${inc.thumbnailUrl}" alt="${inc.title}" class="w-full h-full object-cover" />
+          <!-- 3D Ground Shadow & Thermal Halo -->
+          <div class="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-4 bg-black/60 rounded-full blur-xs pointer-events-none"></div>
+          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full animate-ping opacity-40 pointer-events-none" style="background-color: ${themeColor};"></div>
+
+          <!-- Elevated 3D Sign Board Card -->
+          <div class="relative bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-1.5 shadow-2xl border-2 flex items-center gap-2 max-w-[190px] select-none" style="border-color: ${themeColor}; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6), 0 0 15px ${themeColor}40;">
             
-            <div class="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] font-black text-white text-center py-0.5 leading-none">
-              ${inc.confirmationsCount}🔥
+            <!-- Left: Problem Sign Emblem with Status Ring -->
+            <div class="relative w-9 h-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden shadow-inner text-base font-bold" style="background: radial-gradient(circle, ${themeColor}30 0%, #0F172A 100%); border: 1.5px solid ${themeColor};">
+              <span class="z-10">${signIcon}</span>
+              ${isLiveCase ? `
+                <div class="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-red-500 animate-ping"></div>
+              ` : ''}
             </div>
+
+            <!-- Middle: Problem Details & Locality -->
+            <div class="flex-1 min-w-0 pr-1">
+              <div class="flex items-center justify-between gap-1 leading-none mb-1">
+                <span class="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md" style="background-color: ${themeColor}25; color: ${themeColor}; border: 1px solid ${themeColor}50;">
+                  ${badgeMetric}
+                </span>
+                <span class="text-[8px] font-bold text-amber-400 flex items-center gap-0.5">
+                  🔥 ${inc.confirmationsCount}
+                </span>
+              </div>
+              <div class="text-[11px] font-bold text-white truncate leading-tight">
+                ${inc.locationName.split(',')[0]}
+              </div>
+              <div class="text-[9px] text-slate-400 truncate">
+                ${inc.ward.split('(')[0]}
+              </div>
+            </div>
+
+            <!-- Right: Photo Evidence Thumbnail Circle -->
+            <div class="relative w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-slate-600 bg-black">
+              <img src="${inc.thumbnailUrl}" alt="${inc.title}" class="w-full h-full object-cover" />
+            </div>
+
           </div>
 
-          <!-- Category floating pill -->
-          <div class="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase text-slate-950 shadow-md flex items-center gap-0.5" style="background: ${ringColor};">
-            <span>${inc.problemType}</span>
-          </div>
+          <!-- 3D Sign Stem & Anchor Pin -->
+          <div class="w-0.5 h-3 bg-gradient-to-b from-slate-400 to-transparent mx-auto"></div>
+          <div class="w-2.5 h-2.5 rounded-full mx-auto shadow-md" style="background-color: ${themeColor}; box-shadow: 0 0 8px ${themeColor};"></div>
+
         </div>
       `;
 
       const customIcon = L.divIcon({
-        html: iconHtml,
-        className: 'snap-leaflet-marker',
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
+        html: markerHtml,
+        className: 'municipal-3d-marker',
+        iconSize: [190, 68],
+        iconAnchor: [95, 68]
       });
 
       const marker = L.marker([inc.lat, inc.lng], { icon: customIcon });
@@ -258,10 +449,11 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
     if (userCustomPin) {
       const userPinHtml = `
         <div class="relative flex flex-col items-center cursor-pointer" style="transform: translate(-50%, -100%);">
-          <div class="px-2 py-0.5 rounded-md bg-white text-slate-950 text-[10px] font-bold shadow-lg border border-slate-300 whitespace-nowrap mb-1">
-            Confirmed Spot
+          <div class="px-2.5 py-1 rounded-xl bg-blue-600 text-white text-[10px] font-black shadow-2xl border border-blue-400 whitespace-nowrap mb-1 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>Target Spot Locked</span>
           </div>
-          <div class="w-7 h-7 rounded-full bg-red-600 border-2 border-white text-white flex items-center justify-center shadow-xl animate-bounce">
+          <div class="w-8 h-8 rounded-full bg-red-600 border-2 border-white text-white flex items-center justify-center shadow-2xl animate-bounce text-sm">
             📍
           </div>
         </div>
@@ -270,8 +462,8 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
       const userIcon = L.divIcon({
         html: userPinHtml,
         className: 'user-pin-marker',
-        iconSize: [28, 28],
-        iconAnchor: [14, 28]
+        iconSize: [32, 32],
+        iconAnchor: [16, 32]
       });
 
       L.marker([userCustomPin.lat, userCustomPin.lng], { icon: userIcon })
@@ -280,10 +472,10 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
   };
 
   useEffect(() => {
-    renderMarkers();
-  }, [filteredIncidents, showHeatPulse, userCustomPin]);
+    renderLayers();
+  }, [filteredIncidents, showThermalHeatmap, heatIntensity, userCustomPin]);
 
-  // Recenter to user / Nagpur center
+  // Recenter to user or Nagpur center
   const handleRecenter = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -322,24 +514,24 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
   };
 
   return (
-    <div className="w-full space-y-3 select-none" id="snapchat-photo-map-container">
+    <div className="w-full space-y-3 select-none" id="municipal-3d-hotspot-map">
       
-      {/* Category Filter Objective Strip */}
-      <div className="bg-slate-900/90 backdrop-blur-md p-2 rounded-2xl border border-slate-700/80 shadow-md flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
+      {/* Top Filter Strip: Objective Selection */}
+      <div className="bg-slate-900/95 backdrop-blur-md p-2 rounded-2xl border border-slate-700/80 shadow-md flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] font-extrabold uppercase text-slate-400 px-2 flex items-center gap-1">
             <Filter className="w-3 h-3 text-amber-400" />
-            Show Only:
+            Domain Filter:
           </span>
 
           {[
-            { id: 'all', label: '🌐 All Problems', color: 'bg-slate-700 text-white' },
+            { id: 'all', label: '🌐 All Civic Hotspots', color: 'bg-slate-700 text-white' },
+            { id: 'pothole', label: '🕳️ Potholes & Roads', color: 'bg-orange-500 text-white font-black' },
             { id: 'streetlight', label: '💡 Street Lights', color: 'bg-amber-500 text-slate-950 font-black' },
             { id: 'flood', label: '🌊 Flood & Drains', color: 'bg-cyan-500 text-slate-950 font-black' },
-            { id: 'pothole', label: '🕳️ Potholes', color: 'bg-orange-500 text-white font-black' },
             { id: 'garbage', label: '🗑️ Garbage & Waste', color: 'bg-emerald-500 text-slate-950 font-black' },
             { id: 'water', label: '🚰 Water Leakage', color: 'bg-blue-500 text-white font-black' },
-            { id: 'trees', label: '🌳 Tree Hazard', color: 'bg-lime-500 text-slate-950 font-black' },
+            { id: 'trees', label: '🌳 Tree Hazards', color: 'bg-lime-500 text-slate-950 font-black' },
           ].map((btn) => {
             const isSelected = activeFilter === btn.id;
             return (
@@ -358,82 +550,147 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
           })}
         </div>
 
-        {/* Map Tile Layers */}
-        <div className="hidden sm:flex items-center gap-1 bg-slate-800 p-0.5 rounded-xl border border-slate-700 shrink-0 text-[11px] font-bold">
-          <button
-            onClick={() => setMapTileStyle('snapDark')}
-            className={`px-2.5 py-1 rounded-lg transition-colors ${mapTileStyle === 'snapDark' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
-          >
-            Dark Canvas
-          </button>
-          <button
-            onClick={() => setMapTileStyle('satellite')}
-            className={`px-2.5 py-1 rounded-lg transition-colors ${mapTileStyle === 'satellite' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
-          >
-            Satellite Aerial
-          </button>
-          <button
-            onClick={() => setMapTileStyle('street')}
-            className={`px-2.5 py-1 rounded-lg transition-colors ${mapTileStyle === 'street' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
-          >
-            Street Map
-          </button>
+        {/* 3D Perspective & Map Layer Controls */}
+        <div className="hidden md:flex items-center gap-2 shrink-0">
+          
+          {/* 3D Perspective Toggle Button */}
+          <div className="flex items-center gap-0.5 bg-slate-800 p-0.5 rounded-xl border border-slate-700 text-[11px] font-bold">
+            <button
+              onClick={() => setView3DMode('flat')}
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${view3DMode === 'flat' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
+              title="2D Top-Down View"
+            >
+              2D Plan
+            </button>
+            <button
+              onClick={() => setView3DMode('isometric')}
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${view3DMode === 'isometric' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
+              title="3D Isometric Tactical View"
+            >
+              <Rotate3d className="w-3.5 h-3.5" />
+              <span>3D Iso</span>
+            </button>
+            <button
+              onClick={() => setView3DMode('perspective')}
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${view3DMode === 'perspective' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
+              title="3D Deep Perspective View"
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span>3D Deep</span>
+            </button>
+          </div>
+
+          {/* Map Base Tile Layers */}
+          <div className="flex items-center gap-0.5 bg-slate-800 p-0.5 rounded-xl border border-slate-700 text-[11px] font-bold">
+            <button
+              onClick={() => setMapTileStyle('3dDark')}
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === '3dDark' ? 'bg-slate-700 text-amber-300' : 'text-slate-300 hover:text-white'}`}
+            >
+              Command Dark
+            </button>
+            <button
+              onClick={() => setMapTileStyle('satellite')}
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'satellite' ? 'bg-slate-700 text-amber-300' : 'text-slate-300 hover:text-white'}`}
+            >
+              Satellite
+            </button>
+          </div>
+
         </div>
       </div>
 
-      {/* Main Leaflet Map Canvas */}
-      <div className={`relative w-full ${heightClass} rounded-3xl overflow-hidden shadow-xl border-2 border-slate-800 bg-[#0B132B]`}>
+      {/* 3D Map Viewport Container */}
+      <div 
+        className={`relative w-full ${heightClass} rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 bg-[#090D16]`}
+        style={{ perspective: '1200px' }}
+      >
         
-        {/* Leaflet DOM Node */}
-        <div ref={mapContainerRef} className="w-full h-full z-0" />
+        {/* 3D Tilted Map Stage Canvas */}
+        <div 
+          className="w-full h-full transition-transform duration-700 ease-out origin-bottom"
+          style={{
+            transform: tiltAngle > 0 ? `rotateX(${tiltAngle}deg) scale(1.06)` : 'none',
+            transformStyle: 'preserve-3d'
+          }}
+        >
+          <div ref={mapContainerRef} className="w-full h-full z-0" />
+        </div>
 
-        {/* Floating Top Stats Banner */}
-        <div className="absolute top-3 left-3 z-10 bg-black/75 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl border border-white/15 shadow-lg flex items-center gap-3 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping" />
-            <span className="font-bold">
-              {filteredIncidents.length} {activeFilter === 'all' ? 'Civic Incidents' : `${activeFilter.toUpperCase()} Incidents`} Monitored
+        {/* Floating Top HUD Banner */}
+        <div className="absolute top-3 left-3 z-10 bg-slate-950/85 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl border border-white/15 shadow-xl flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="font-extrabold text-white">
+              {filteredIncidents.length} {activeFilter === 'all' ? 'Active Civic Hotspots' : `${activeFilter.toUpperCase()} Signs`}
             </span>
           </div>
-          <span className="text-slate-400 hidden sm:inline">| Tap any incident bubble to inspect & corroborate</span>
+          <span className="text-slate-400 hidden sm:inline">| Live 3D Spatial Sync Enabled</span>
         </div>
 
         {/* Floating Map Controls (Right Side) */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+          
           <button
             onClick={handleRecenter}
-            className="p-2.5 bg-black/80 hover:bg-black text-white rounded-2xl shadow-lg border border-white/20 transition-all cursor-pointer"
-            title="Recenter to GPS"
+            className="p-2.5 bg-slate-950/85 hover:bg-slate-900 text-white rounded-2xl shadow-xl border border-white/20 transition-all cursor-pointer"
+            title="Recenter to GPS Location"
           >
             <Navigation className="w-4 h-4 text-amber-400" />
           </button>
 
+          {/* Thermal Heatmap Toggle */}
           <button
-            onClick={() => setShowHeatPulse(!showHeatPulse)}
-            className={`p-2.5 rounded-2xl shadow-lg border transition-all cursor-pointer ${
-              showHeatPulse
-                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-amber-500/30'
-                : 'bg-black/80 text-white border-white/20 hover:bg-black'
+            onClick={() => setShowThermalHeatmap(!showThermalHeatmap)}
+            className={`p-2.5 rounded-2xl shadow-xl border transition-all cursor-pointer ${
+              showThermalHeatmap
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-amber-500/30 font-bold'
+                : 'bg-slate-950/85 text-slate-300 border-white/20 hover:bg-slate-900'
             }`}
-            title="Toggle Heat Pulse"
+            title="Toggle Thermal Heatmap Dispersion"
           >
             <Flame className="w-4 h-4" />
           </button>
+
+          {/* 3D Tilt Angle Cycler */}
+          <button
+            onClick={() => {
+              if (view3DMode === 'flat') setView3DMode('isometric');
+              else if (view3DMode === 'isometric') setView3DMode('perspective');
+              else setView3DMode('flat');
+            }}
+            className="p-2.5 bg-slate-950/85 hover:bg-slate-900 text-white rounded-2xl shadow-xl border border-white/20 transition-all cursor-pointer flex items-center justify-center"
+            title="Cycle 3D Perspective Tilt"
+          >
+            <Rotate3d className="w-4 h-4 text-cyan-400" />
+          </button>
         </div>
 
-        {/* Confirm Spot Bottom Floating Card if enabled */}
+        {/* Heatmap Legend Bar (Bottom Left) */}
+        {showThermalHeatmap && (
+          <div className="absolute bottom-20 sm:bottom-4 left-4 z-10 bg-slate-950/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 text-[10px] text-white shadow-xl flex items-center gap-2">
+            <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="font-bold">Density:</span>
+            <div className="flex items-center gap-1">
+              <span className="text-cyan-400">Low</span>
+              <div className="w-16 h-2 rounded-full bg-gradient-to-r from-cyan-500 via-yellow-400 to-red-500 border border-slate-700"></div>
+              <span className="text-red-400 font-bold">Critical Hotspot</span>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Floating Command & Spot Confirmation Bar */}
         {allowSpotConfirmation && (
-          <div className="absolute bottom-4 inset-x-4 z-10 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-950/90 backdrop-blur-md p-3.5 rounded-2xl border border-slate-700 shadow-2xl text-white">
+          <div className="absolute bottom-4 inset-x-4 z-10 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-950/92 backdrop-blur-md p-3.5 rounded-2xl border border-slate-700 shadow-2xl text-white">
             <div className="flex items-center gap-2.5 text-xs">
-              <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center border border-amber-400/30 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center border border-amber-400/30 shrink-0">
                 <MapPin className="w-4 h-4" />
               </div>
               <div>
                 <div className="font-bold text-white">
-                  {userCustomPin ? userCustomPin.name : selectedStory ? selectedStory.locationName : 'Click any spot on map to confirm location'}
+                  {userCustomPin ? userCustomPin.name : selectedStory ? selectedStory.locationName : 'Tap any 3D problem sign or click anywhere to lock coordinates'}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  {selectedStory ? `Ward: ${selectedStory.ward} • ${selectedStory.confirmationsCount} Citizens Corroborated` : 'Spatial geotag will lock coordinates for rapid squad dispatch.'}
+                  {selectedStory ? `Ward: ${selectedStory.ward} • ${selectedStory.confirmationsCount} Citizen Corroborations` : 'All real citizen submitted issues are displayed on this 3D map in real time.'}
                 </div>
               </div>
             </div>
@@ -445,7 +702,7 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
                 id="confirm-spot-map-button"
               >
                 <CheckCircle2 className="w-4 h-4 text-slate-950" />
-                <span>Confirm This Spot</span>
+                <span>Confirm Location</span>
               </button>
 
               {onLaunchDedicatedAI && (
@@ -475,30 +732,29 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
             <CheckCircle2 className="w-4 h-4 text-slate-950" />
             <span>{confirmToast}</span>
           </div>
-          <button onClick={() => setConfirmToast(null)} className="text-slate-950 hover:text-slate-800">
+          <button onClick={() => setConfirmToast(null)} className="text-slate-950 hover:text-slate-800 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Snapchat Photo Story Inspector Modal */}
+      {/* 3D Incident Inspector & Dispatcher Modal */}
       {selectedStory && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-fade-in">
           <div className="bg-slate-900 border border-slate-700 text-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl space-y-4">
             
-            {/* Story Top Header with Author */}
+            {/* Top Header with Citizen & Status */}
             <div className="p-4 bg-slate-950 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-3">
-                <img
-                  src={selectedStory.storyAuthorAvatar}
-                  alt={selectedStory.storyAuthor}
-                  className="w-10 h-10 rounded-full object-cover border-2 border-amber-400"
-                />
+                <div className="w-10 h-10 rounded-full bg-blue-900 border-2 border-amber-400 flex items-center justify-center text-amber-300 font-bold">
+                  <User className="w-5 h-5" />
+                </div>
                 <div>
                   <div className="text-sm font-bold text-white flex items-center gap-1.5">
                     <span>{selectedStory.storyAuthor}</span>
-                    <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-[9px] font-bold uppercase text-white tracking-wider">
-                      Geotagged Report
+                    <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-[9px] font-bold uppercase text-white tracking-wider flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-300" />
+                      Geotagged Incident
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 flex items-center gap-1">
@@ -511,7 +767,7 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
 
               <button
                 onClick={() => setSelectedStory(null)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -527,22 +783,27 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
 
               {/* Status Badge overlay */}
               <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-black border border-white/20 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span className={`w-2 h-2 rounded-full ${selectedStory.status === 'Resolved' ? 'bg-emerald-400' : 'bg-amber-400'} animate-ping`} />
                 <span>{selectedStory.status}</span>
               </div>
 
               <div className="absolute bottom-3 right-3 bg-amber-500 text-slate-950 px-2.5 py-1 rounded-xl text-xs font-black shadow-lg">
-                🔥 {selectedStory.confirmationsCount} Citizens Confirmed
+                🔥 {selectedStory.confirmationsCount} Citizen Corroborations
               </div>
             </div>
 
             {/* AI Diagnostics & Work Order */}
             <div className="p-4 space-y-3 text-xs">
               <div>
-                <span className="px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-bold text-[10px] uppercase border border-amber-400/30">
-                  {selectedStory.categoryLabel}
-                </span>
-                <h3 className="text-base font-bold text-white mt-1">{selectedStory.title}</h3>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-bold text-[10px] uppercase border border-amber-400/30">
+                    {selectedStory.categoryLabel}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ID: #{selectedStory.id}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white">{selectedStory.title}</h3>
                 <p className="text-slate-300 mt-1 leading-relaxed">{selectedStory.aiDiagnosis}</p>
               </div>
 
@@ -568,11 +829,11 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
                 </div>
               )}
 
-              {/* Assigned Vehicle */}
+              {/* Assigned Squad / Department */}
               <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700 flex items-center justify-between text-slate-300">
                 <span className="flex items-center gap-1.5">
                   <Truck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Assigned Rapid Squad:</span>
+                  <span>Assigned Unit:</span>
                 </span>
                 <span className="font-bold text-white">{selectedStory.assignedUnit}</span>
               </div>
@@ -584,10 +845,10 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
                     handleConfirmSpotAction();
                     setSelectedStory(null);
                   }}
-                  className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md"
+                  className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm This Spot (+1)</span>
+                  <span>Corroborate (+1)</span>
                 </button>
 
                 {onLaunchDedicatedAI && (
@@ -599,10 +860,10 @@ export const SnapchatPhotoMap: React.FC<SnapchatPhotoMapProps> = ({
                       setSelectedStory(null);
                       onLaunchDedicatedAI(domId, loc, wrd);
                     }}
-                    className="flex-1 py-2.5 bg-[#0B1E38] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-blue-400/40 shadow-md"
+                    className="flex-1 py-2.5 bg-[#0B1E38] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-blue-400/40 shadow-md cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>Launch {selectedStory.categoryLabel} AI</span>
+                    <span>Launch AI Resolver</span>
                   </button>
                 )}
               </div>

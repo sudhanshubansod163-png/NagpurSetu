@@ -3,12 +3,12 @@ import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USER } from '../data/init
 import { FirebaseDataService } from './firebaseDataService';
 
 const STORAGE_KEYS = {
-  CASES: 'nagpursetu_cases_v5_live',
-  NOTIFICATIONS: 'nagpursetu_notifications_v5_live',
-  USER: 'nagpursetu_user_v5_live',
-  ACTIVE_ROLE: 'nagpursetu_active_role_v5_live',
-  CURRENT_LANGUAGE: 'nagpursetu_lang_v5_live',
-  DRAFT_CHAT: 'nagpursetu_draft_chat_v5_live',
+  CASES: 'nagpursetu_cases_v6_clean',
+  NOTIFICATIONS: 'nagpursetu_notifications_v6_clean',
+  USER: 'nagpursetu_user_v6_clean',
+  ACTIVE_ROLE: 'nagpursetu_active_role_v6_clean',
+  CURRENT_LANGUAGE: 'nagpursetu_lang_v6_clean',
+  DRAFT_CHAT: 'nagpursetu_draft_chat_v6_clean',
 };
 
 // Cleanup old legacy version keys
@@ -19,10 +19,12 @@ if (typeof window !== 'undefined') {
       'nagpursetu_cases_v2',
       'nagpursetu_cases_v3_clean',
       'nagpursetu_cases_v4_clean',
+      'nagpursetu_cases_v5_live',
       'nagpursetu_notifications',
       'nagpursetu_notifications_v2',
       'nagpursetu_notifications_v3_clean',
-      'nagpursetu_notifications_v4_clean'
+      'nagpursetu_notifications_v4_clean',
+      'nagpursetu_notifications_v5_live'
     ];
     legacyKeys.forEach(k => localStorage.removeItem(k));
   } catch (e) {
@@ -258,6 +260,32 @@ export const StorageService = {
     FirebaseDataService.saveCase(caseWithSession).catch((err) => {
       console.warn('Firestore case persist warning:', err);
     });
+
+    // Auto-dispatch hidden admin email notification asynchronously
+    try {
+      fetch('/api/notify-admin-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseId: caseWithSession.id,
+          title: caseWithSession.title,
+          description: caseWithSession.description,
+          citizenName: caseWithSession.citizenName || 'Citizen User',
+          citizenPhone: caseWithSession.citizenPhone || '',
+          category: caseWithSession.category,
+          department: caseWithSession.department,
+          location: caseWithSession.location,
+          ward: caseWithSession.ward,
+          priority: caseWithSession.priority,
+          photoUrl: caseWithSession.attachments && caseWithSession.attachments.length > 0 ? caseWithSession.attachments[0].url : '',
+          isCitizenVerified: Boolean(caseWithSession.isCitizenVerified || caseWithSession.citizenVerification)
+        })
+      }).catch((err) => {
+        console.warn('Admin alert dispatch notice:', err);
+      });
+    } catch (e) {
+      // Safe fallback
+    }
 
     // Auto-create notification for citizen
     StorageService.addNotification({

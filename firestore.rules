@@ -1,36 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // Cases collection: citizens can read their cases, officers/admins can read all.
-    // Anyone authenticated or public citizen report can submit, edit, or delete a case.
     match /cases/{caseId} {
       allow read, write: if true;
-      allow create, update, delete: if true;
     }
 
-    // Notifications
     match /notifications/{notificationId} {
       allow read, write: if true;
-      allow create, update, delete: if true;
     }
 
-    // User profiles
     match /users/{userId} {
-      allow read: if true;
-      allow write: if isOwner(userId) || true;
+      allow read, write: if true;
     }
 
-    // Connection health check / diagnostic document
-    match /_system/health {
+    match /_system/{docId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
       allow read, write: if true;
     }
   }

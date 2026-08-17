@@ -13,6 +13,7 @@ import { CertificatesScreen } from './components/CertificatesScreen';
 import { ComplaintsScreen } from './components/ComplaintsScreen';
 import { HotspotsScreen } from './components/HotspotsScreen';
 import { CaseDetailModal } from './components/CaseDetailModal';
+import { AdminPanelScreen } from './components/AdminPanelScreen';
 import { StorageService } from './services/storage';
 import { CaseItem, Department, MunicipalService } from './types';
 
@@ -38,15 +39,28 @@ export function App() {
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [termsModalOpen, setTermsModalOpen] = useState(false);
 
-  // Sync hash routing
+  // Sync hash routing & global secret shortcut (Ctrl + Shift + A)
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash ? window.location.hash.replace('#', '') || '/' : '/';
       setCurrentRoute(hash);
     };
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Secret key combination: Ctrl + Shift + A or Cmd + Shift + A
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        window.location.hash = '/admin';
+        setCurrentRoute('/admin');
+      }
+    };
+
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const navigate = (route: string) => {
@@ -175,6 +189,14 @@ export function App() {
     if (currentRoute === '/hotspots') {
       return (
         <HotspotsScreen
+          navigate={navigate}
+        />
+      );
+    }
+
+    if (currentRoute === '/admin' || currentRoute.startsWith('/admin')) {
+      return (
+        <AdminPanelScreen
           navigate={navigate}
         />
       );

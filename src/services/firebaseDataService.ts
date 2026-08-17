@@ -187,9 +187,14 @@ export const FirebaseDataService = {
   },
 
   subscribeToCases: (callback: (cases: CaseItem[]) => void) => {
-    const q = query(collection(db, CASES_COLLECTION), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, CASES_COLLECTION), (snapshot) => {
       const cases = snapshot.docs.map((d) => d.data() as CaseItem);
+      // Sort descending by createdAt
+      cases.sort((a, b) => {
+        const tA = new Date(a.createdAt || 0).getTime();
+        const tB = new Date(b.createdAt || 0).getTime();
+        return tB - tA;
+      });
       callback(cases);
     }, (error) => {
       console.error('Firestore cases subscription error:', error);

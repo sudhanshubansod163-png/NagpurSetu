@@ -181,15 +181,15 @@ export const HotspotsScreen: React.FC<HotspotsScreenProps> = ({ navigate }) => {
           </div>
         </div>
 
-        {/* Interactive Civic Hotspot Map Component */}
+        {/* Interactive 3D Civic Hotspot Map Component */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-[#0B1E38] flex items-center gap-2">
               <MapPin className="w-5 h-5 text-blue-700" />
-              <span>Interactive Nagpur Civic Incident Map</span>
+              <span>3D Geospatial Nagpur Civic Incident Map</span>
             </h2>
-            <span className="text-xs text-slate-500">
-              Filter by objective to view ONLY that problem's live incidents on the map
+            <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+              Real-time synchronized 3D thermal heatmap & problem-wise field markers across all devices
             </span>
           </div>
 
@@ -198,71 +198,8 @@ export const HotspotsScreen: React.FC<HotspotsScreenProps> = ({ navigate }) => {
             onSelectIncident={(inc) => setSelectedIncident(inc)}
             onLaunchDedicatedAI={handleLaunchAI}
             onSpotConfirmed={handleSpotConfirmed}
-            heightClass="h-[540px]"
+            heightClass="h-[620px]"
           />
-        </div>
-
-        {/* Area Wise Problem Analytics Table */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-[#0B1E38]">Area-Wise Nagpur Problem Analytics</h3>
-              <p className="text-xs text-slate-500">Zonal complaint aggregation & community confirmation metrics across 10 NMC Wards</p>
-            </div>
-            <span className="text-xs font-bold text-blue-900 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
-              10 Municipal Wards
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-y border-slate-200">
-                <tr>
-                  <th className="py-2.5 px-3">Ward / Zone</th>
-                  <th className="py-2.5 px-3">Total Issues</th>
-                  <th className="py-2.5 px-3">Active</th>
-                  <th className="py-2.5 px-3">Resolved</th>
-                  <th className="py-2.5 px-3">Community Weight</th>
-                  <th className="py-2.5 px-3">Top Problem Domain</th>
-                  <th className="py-2.5 px-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {WARD_AREA_ANALYTICS.map((ws) => (
-                  <tr key={ws.ward} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-2.5 px-3 font-bold text-slate-900">{ws.ward}</td>
-                    <td className="py-2.5 px-3">{ws.totalProblems}</td>
-                    <td className="py-2.5 px-3 text-red-600 font-bold">{ws.activeProblems}</td>
-                    <td className="py-2.5 px-3 text-emerald-600 font-bold">{ws.resolvedProblems}</td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-900 font-bold rounded-md">
-                        {ws.confirmations} conf.
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-600">{ws.topCategory}</td>
-                    <td className="py-2.5 px-3">
-                      <button
-                        onClick={() => {
-                          const domKey = ws.topCategory.toLowerCase().includes('light') 
-                            ? 'street_lights' 
-                            : ws.topCategory.toLowerCase().includes('drain') || ws.topCategory.toLowerCase().includes('water')
-                            ? 'flood_drainage'
-                            : ws.topCategory.toLowerCase().includes('road')
-                            ? 'potholes_roads'
-                            : 'garbage_waste';
-                          handleLaunchAI(domKey, ws.area || 'Nagpur', ws.ward);
-                        }}
-                        className="px-2.5 py-1 bg-[#0B1E38] text-white text-[11px] font-bold rounded-lg hover:bg-blue-900 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Sparkles className="w-3 h-3 text-amber-300" />
-                        <span>Solve AI</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
 
       </div>

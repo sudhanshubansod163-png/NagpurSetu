@@ -162,21 +162,27 @@ export const GPSCamera: React.FC<GPSCameraProps> = ({
         throw new Error('Camera access API is not supported in this browser.');
       }
 
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
+      let newStream: MediaStream;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch (firstErr) {
+        console.warn('Initial camera constraint fallback:', firstErr);
+        // Fallback to basic video constraint
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
 
       setStream(newStream);
       setCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-        await videoRef.current.play().catch(() => {});
-      }
     } catch (err: any) {
       console.warn('Camera start issue:', err);
       let msg = 'Unable to access camera. Please allow camera permissions or upload a photo directly.';
@@ -190,7 +196,17 @@ export const GPSCamera: React.FC<GPSCameraProps> = ({
     } finally {
       setIsProcessing(false);
     }
-  }, [stream]);
+  }, []);
+
+  // Ensure stream is always attached to video element as soon as stream or video element becomes available
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((e) => {
+        console.warn('Video play auto-start note:', e);
+      });
+    }
+  }, [stream, cameraActive]);
 
   // Switch between front and back camera
   const toggleFacingMode = () => {
@@ -199,9 +215,9 @@ export const GPSCamera: React.FC<GPSCameraProps> = ({
     startCamera(next);
   };
 
-  // Stop camera stream when unmounting
+  // Start camera immediately on mount
   useEffect(() => {
-    startCamera(facingMode);
+    startCamera('environment');
     return () => {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());

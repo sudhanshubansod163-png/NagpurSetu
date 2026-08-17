@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -15,6 +15,18 @@ try {
   });
 } catch (e) {
   console.warn('Auth persistence init:', e);
+}
+
+// Auto ensure authenticated session
+if (typeof window !== 'undefined') {
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      signInAnonymously(auth).catch((err) => {
+        // Safe fallback if anonymous auth provider is not active
+        console.warn('Anonymous auth sign-in notice:', err?.message || err);
+      });
+    }
+  });
 }
 
 export const googleProvider = new GoogleAuthProvider();

@@ -59,7 +59,7 @@ export const TalkScreen: React.FC<TalkScreenProps> = ({
   const [userSelectedLang, setUserSelectedLang] = useState<'mr' | 'hi' | 'en'>(() => {
     const saved = StorageService.getLanguage();
     if (saved === 'mr' || saved === 'hi' || saved === 'en') return saved;
-    return 'mr'; // Default friendly Marathi for Nagpur
+    return 'hi'; // Default friendly Hindi for NagpurSetu AI
   });
 
   const [inputText, setInputText] = useState('');
