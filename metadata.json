@@ -1,0 +1,12 @@
+{
+  "name": "Remix NagpurSetu",
+  "description": "Universal municipal civic issue reporting and service platform for Nagpur Municipal Corporation with voice and multilingual conversational AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

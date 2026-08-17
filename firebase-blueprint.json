@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "CaseItem": {
+      "title": "CaseItem",
+      "description": "Nagpur Municipal Corporation civic report and dispatch item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "citizenId": { "type": "string" },
+        "citizenName": { "type": "string" },
+        "citizenPhone": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "department": { "type": "string" },
+        "category": { "type": "string" },
+        "location": { "type": "string" },
+        "ward": { "type": "string" },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "department", "status"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Citizen alert and case tracking notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "message"]
+    }
+  },
+  "firestore": {
+    "/cases/{caseId}": {
+      "schema": "CaseItem",
+      "description": "Collection of municipal complaints and civic issues"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "NotificationItem",
+      "description": "System and case status update alerts"
+    }
+  }
+}
